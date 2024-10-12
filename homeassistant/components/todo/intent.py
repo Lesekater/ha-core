@@ -11,11 +11,13 @@ from . import TodoItem, TodoItemStatus, TodoListEntity
 from .const import DATA_COMPONENT, DOMAIN
 
 INTENT_LIST_ADD_ITEM = "HassListAddItem"
+INTENT_LIST_LIST_ITEMS = "HassListListItems"
 
 
 async def async_setup_intents(hass: HomeAssistant) -> None:
     """Set up the todo intents."""
     intent.async_register(hass, ListAddItemIntent())
+    intent.async_register(hass, ListListItemsIntent())
 
 
 class ListAddItemIntent(intent.IntentHandler):
@@ -62,4 +64,61 @@ class ListAddItemIntent(intent.IntentHandler):
 
         response = intent_obj.create_response()
         response.response_type = intent.IntentResponseType.ACTION_DONE
+        return response
+
+
+class ListListItemsIntent(intent.IntentHandler):
+    """Handle ListListItems intents."""
+
+    intent_type = INTENT_LIST_LIST_ITEMS
+    description = "List items in a todo list"
+    slot_schema = {
+        vol.Required("name"): intent.non_empty_string,
+    }
+    platforms = {DOMAIN}
+
+    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+        """Handle the intent."""
+        hass = intent_obj.hass
+
+        slots = self.async_validate_slots(intent_obj.slots)
+        list_name = slots["name"]["value"]
+
+        target_list: TodoListEntity | None = None
+
+        # Find matching list
+        match_constraints = intent.MatchTargetsConstraints(
+            name=list_name, domains=[DOMAIN], assistant=intent_obj.assistant
+        )
+        match_result = intent.async_match_targets(hass, match_constraints)
+        if not match_result.is_match:
+            raise intent.MatchFailedError(
+                result=match_result, constraints=match_constraints
+            )
+
+        target_list = hass.data[DATA_COMPONENT].get_entity(
+            match_result.states[0].entity_id
+        )
+        if target_list is None:
+            raise intent.IntentHandleError(f"No to-do list: {list_name}")
+
+        items = target_list.todo_items
+        success_results: list[intent.IntentResponseTarget] = []
+
+        response = intent_obj.create_response()
+        response.response_type = intent.IntentResponseType.QUERY_ANSWER
+
+        if items:
+            success_results.extend(
+                intent.IntentResponseTarget(
+                    type=intent.IntentResponseTargetType.CUSTOM,
+                    name=item.summary,
+                    id=item.uid,
+                )
+                for item in items
+                if item.summary and item.status == TodoItemStatus.NEEDS_ACTION
+            )
+
+        response.async_set_results(success_results)
+
         return response
