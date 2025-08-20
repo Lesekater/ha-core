@@ -838,10 +838,10 @@ class StartTimerIntentHandler(intent.IntentHandler):
         )
 
         if isinstance(conversation_agent, ConversationEntity):
-            if (
-                ConversationEntityFeature.CONTROL
-                in conversation_agent.supported_features
-            ):
+            # Check if agent has CONTROL feature to skip validation
+            # This allows LLM agents to bypass validation while still validating for default agent
+            agent_features = getattr(conversation_agent, "supported_features", [])
+            if ConversationEntityFeature.CONTROL in agent_features:
                 return True  # Skip validation
 
         test_input = ConversationInput(
