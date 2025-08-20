@@ -838,7 +838,10 @@ class StartTimerIntentHandler(intent.IntentHandler):
         )
 
         if isinstance(conversation_agent, ConversationEntity):
-            if ConversationEntityFeature.CONTROL in conversation_agent.supported_features:
+            if (
+                ConversationEntityFeature.CONTROL
+                in conversation_agent.supported_features
+            ):
                 return True  # Skip validation
 
         test_input = ConversationInput(
@@ -851,7 +854,9 @@ class StartTimerIntentHandler(intent.IntentHandler):
         )
 
         # Check if command matches sentence triggers
-        sentence_result = await async_handle_sentence_triggers(intent_obj.hass, test_input)
+        sentence_result = await async_handle_sentence_triggers(
+            intent_obj.hass, test_input
+        )
         if sentence_result is not None:
             return True
 
