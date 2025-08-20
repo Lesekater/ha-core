@@ -826,7 +826,10 @@ class StartTimerIntentHandler(intent.IntentHandler):
             ConversationEntityFeature,
             ConversationInput,
             async_get_agent,
-            async_handle_intents,
+            async_handle_sentence_triggers,
+        )
+        from homeassistant.components.conversation.default_agent import (  # noqa: PLC0415
+            DefaultAgent,
         )
 
         # Skip validation for LLM agents with control
@@ -835,15 +838,7 @@ class StartTimerIntentHandler(intent.IntentHandler):
         )
 
         if isinstance(conversation_agent, ConversationEntity):
-            agent_state = intent_obj.hass.states.get(conversation_agent.entity_id)
-            if (
-                agent_state
-                and ConversationEntityFeature.CONTROL
-                and (
-                    agent_state.attributes.get("supported_features", 0)
-                    & ConversationEntityFeature.CONTROL
-                )
-            ):
+            if ConversationEntityFeature.CONTROL in conversation_agent.supported_features:
                 return True  # Skip validation
 
         test_input = ConversationInput(
@@ -855,11 +850,19 @@ class StartTimerIntentHandler(intent.IntentHandler):
             agent_id=str(intent_obj.conversation_agent_id),
         )
 
-        recognize_result = await async_handle_intents(intent_obj.hass, test_input)
-        if recognize_result is None:
-            return False
+        # Check if command matches sentence triggers
+        sentence_result = await async_handle_sentence_triggers(intent_obj.hass, test_input)
+        if sentence_result is not None:
+            return True
 
-        return True
+        # Check if command matches intents (for validation only, not execution)
+        # Use the agent directly to access async_recognize_intent
+        if isinstance(conversation_agent, DefaultAgent):
+            intent_result = await conversation_agent.async_recognize_intent(test_input)
+            if intent_result is not None:
+                return True
+
+        return False
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         """Handle the intent."""
