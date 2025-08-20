@@ -825,11 +825,9 @@ class StartTimerIntentHandler(intent.IntentHandler):
             ConversationEntity,
             ConversationEntityFeature,
             ConversationInput,
+            DefaultAgent,
             async_get_agent,
             async_handle_sentence_triggers,
-        )
-        from homeassistant.components.conversation.default_agent import (  # noqa: PLC0415
-            DefaultAgent,
         )
 
         # Skip validation for LLM agents with control
@@ -840,8 +838,11 @@ class StartTimerIntentHandler(intent.IntentHandler):
         if isinstance(conversation_agent, ConversationEntity):
             # Check if agent has CONTROL feature to skip validation
             # This allows LLM agents to bypass validation while still validating for default agent
-            agent_features = getattr(conversation_agent, "supported_features", [])
-            if ConversationEntityFeature.CONTROL in agent_features:
+            agent_features = getattr(conversation_agent, "supported_features", 0)
+            if (
+                not isinstance(conversation_agent, DefaultAgent)
+                and ConversationEntityFeature.CONTROL & agent_features
+            ):
                 return True  # Skip validation
 
         test_input = ConversationInput(
