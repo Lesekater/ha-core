@@ -1,11 +1,12 @@
 """Tests for intent timers."""
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from homeassistant.components import conversation
+from homeassistant.components.conversation import DefaultAgent
 from homeassistant.components.homeassistant.exposed_entities import async_expose_entity
 from homeassistant.components.intent.timers import (
     MultipleTimersMatchedError,
@@ -1427,7 +1428,7 @@ async def test_start_timer_with_conversation_command(
     device_id = "test_device"
     timer_name = "test timer"
     test_command = "turn on the lights"
-    agent_id = "test_agent"
+    agent_id = "conversation.test_agent"
 
     # Set up a light entity for the conversation command to be valid
     hass.states.async_set("light.lights", "off")
@@ -1447,18 +1448,23 @@ async def test_start_timer_with_conversation_command(
         )
 
     with patch("homeassistant.components.conversation.async_converse") as mock_converse:
-        result = await intent.async_handle(
-            hass,
-            "test",
-            intent.INTENT_START_TIMER,
-            {
-                "name": {"value": timer_name},
-                "seconds": {"value": 0},
-                "conversation_command": {"value": test_command},
-            },
-            device_id=device_id,
-            conversation_agent_id=agent_id,
-        )
+        # Mock the validation to return True (valid command)
+        with patch(
+            "homeassistant.components.intent.timers.StartTimerIntentHandler._validate_conversation_command",
+            return_value=True,
+        ):
+            result = await intent.async_handle(
+                hass,
+                "test",
+                intent.INTENT_START_TIMER,
+                {
+                    "name": {"value": timer_name},
+                    "seconds": {"value": 0},
+                    "conversation_command": {"value": test_command},
+                },
+                device_id=device_id,
+                conversation_agent_id=agent_id,
+            )
 
         assert result.response_type == intent.IntentResponseType.ACTION_DONE
 
@@ -1483,7 +1489,22 @@ async def test_start_timer_with_invalid_conversation_command(
     mock_handle_timer = MagicMock()
     async_register_timer_handler(hass, device_id, mock_handle_timer)
 
-    with pytest.raises(intent.IntentHandleError) as exc_info:
+    mock_agent = MagicMock(spec=DefaultAgent)
+    mock_agent.entity_id = agent_id
+    # Make sure async_recognize_intent returns None to simulate invalid command
+    mock_agent.async_recognize_intent = AsyncMock(return_value=None)
+
+    with (
+        patch(
+            "homeassistant.components.conversation.async_get_agent",
+            return_value=mock_agent,
+        ),
+        patch(
+            "homeassistant.components.conversation.async_handle_sentence_triggers",
+            return_value=None,
+        ),
+        pytest.raises(intent.IntentHandleError) as exc_info,
+    ):
         await intent.async_handle(
             hass,
             "test",
@@ -1512,20 +1533,14 @@ async def test_start_timer_with_conversation_command_llm_skip(
     invalid_command = "invalid command that does not exist"
     agent_id = "conversation.test_llm_agent"
 
-    # Create a mock agent state with CONTROL feature (using proper bitmask)
-    hass.states.async_set(
-        agent_id,
-        "idle",
-        {"supported_features": conversation.ConversationEntityFeature.CONTROL},
-    )
-
     mock_handle_timer = MagicMock()
     async_register_timer_handler(hass, device_id, mock_handle_timer)
 
+    # Mock the conversation agent to be a ConversationEntity with CONTROL feature
     mock_agent = MagicMock(spec=conversation.ConversationEntity)
     mock_agent.entity_id = agent_id
+    mock_agent.supported_features = conversation.ConversationEntityFeature.CONTROL
 
-    # Mock the conversation agent to be a ConversationEntity
     with patch(
         "homeassistant.components.conversation.async_get_agent", return_value=mock_agent
     ):
